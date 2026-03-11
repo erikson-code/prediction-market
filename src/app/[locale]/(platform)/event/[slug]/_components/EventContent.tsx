@@ -52,6 +52,12 @@ function isMarketResolved(market: Event['markets'][number] | null | undefined) {
   return Boolean(market?.is_resolved || market?.condition?.resolved)
 }
 
+function resolveDefaultMarket(markets: Event['markets']) {
+  return markets.find(market => market.is_active && !isMarketResolved(market))
+    ?? markets.find(market => !isMarketResolved(market))
+    ?? markets[0]
+}
+
 export default function EventContent({
   event,
   user,
@@ -116,7 +122,7 @@ export default function EventContent({
   useEffect(() => {
     const targetMarket = marketSlug
       ? event.markets.find(market => market.slug === marketSlug)
-      : event.markets[0]
+      : resolveDefaultMarket(event.markets)
     if (!targetMarket) {
       return
     }
@@ -167,7 +173,7 @@ export default function EventContent({
       ? event.markets.find(item => item.condition_id === conditionIdParam)
       : marketSlug
         ? event.markets.find(item => item.slug === marketSlug)
-        : event.markets[0]
+        : resolveDefaultMarket(event.markets)
     if (!market) {
       return
     }
