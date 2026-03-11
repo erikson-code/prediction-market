@@ -337,7 +337,7 @@ export function buildResolutionTimeline(
   }
 }
 
-export function isResolutionReviewActive(market: TimelineMarket, options: BuildResolutionTimelineOptions = {}): boolean {
+export function isResolutionReviewActive(market: TimelineMarket, options: BuildResolutionTimelineOptions): boolean {
   return buildResolutionTimeline(market, options).isReviewActive
 }
 
@@ -346,5 +346,16 @@ export function shouldDisplayResolutionTimeline(market: TimelineMarket | null | 
     return false
   }
 
-  return buildResolutionTimeline(market).items.length > 0
+  const condition = market.condition
+  const status = normalizeResolutionStatus(condition?.resolution_status)
+
+  return Boolean(
+    market.is_resolved
+    || condition?.resolved
+    || status === 'proposed'
+    || status === 'reproposed'
+    || status === 'challenged'
+    || status === 'disputed'
+    || status === 'resolved',
+  )
 }

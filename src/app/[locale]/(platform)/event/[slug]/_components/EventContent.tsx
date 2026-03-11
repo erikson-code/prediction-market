@@ -5,7 +5,7 @@ import { ArrowUpIcon } from 'lucide-react'
 import { useExtracted } from 'next-intl'
 import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import EventHeader from '@/app/[locale]/(platform)/event/[slug]/_components/EventHeader'
 import EventMarketChannelProvider from '@/app/[locale]/(platform)/event/[slug]/_components/EventMarketChannelProvider'
 import EventMarkets from '@/app/[locale]/(platform)/event/[slug]/_components/EventMarkets'
@@ -20,7 +20,6 @@ import EventSingleMarketOrderBook from '@/app/[locale]/(platform)/event/[slug]/_
 import EventTabs from '@/app/[locale]/(platform)/event/[slug]/_components/EventTabs'
 import ResolutionTimelinePanel from '@/app/[locale]/(platform)/event/[slug]/_components/ResolutionTimelinePanel'
 import { shouldDisplayResolutionTimeline } from '@/app/[locale]/(platform)/event/[slug]/_utils/resolution-timeline-builder'
-import { Teleport } from '@/components/Teleport'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { ORDER_SIDE, ORDER_TYPE } from '@/lib/constants'
 import { formatAmountInputValue } from '@/lib/formatters'
@@ -58,17 +57,14 @@ function resolveDefaultMarket(markets: Event['markets']) {
     ?? markets[0]
 }
 
-export default function EventContent({
-  event,
-  user,
-  marketContextEnabled,
-  changeLogEntries: _changeLogEntries,
-  marketSlug,
-  seriesEvents = [],
-  liveChartConfig = null,
-}: EventContentProps) {
-  const t = useExtracted()
-  const setEvent = useOrder(state => state.setEvent)
+interface EventOrderQuerySyncProps {
+  event: Event
+  marketSlug?: string
+  isMobile: boolean
+}
+
+function EventOrderQuerySync({ event, marketSlug, isMobile }: EventOrderQuerySyncProps) {
+  const searchParams = useSearchParams()
   const setMarket = useOrder(state => state.setMarket)
   const setOutcome = useOrder(state => state.setOutcome)
   const setSide = useOrder(state => state.setSide)
@@ -76,76 +72,7 @@ export default function EventContent({
   const setAmount = useOrder(state => state.setAmount)
   const setLimitShares = useOrder(state => state.setLimitShares)
   const setIsMobileOrderPanelOpen = useOrder(state => state.setIsMobileOrderPanelOpen)
-  const currentEventId = useOrder(state => state.event?.id)
-  const currentMarketId = useOrder(state => state.market?.condition_id)
-  const isMobile = useIsMobile()
-  const searchParams = useSearchParams()
-  const clientUser = useUser()
-  const prevUserIdRef = useRef<string | null>(null)
-  const contentRef = useRef<HTMLDivElement | null>(null)
-  const eventMarketsRef = useRef<HTMLDivElement | null>(null)
   const appliedOrderParamsRef = useRef<string | null>(null)
-  const appliedMarketSlugRef = useRef<string | null>(null)
-  const appliedEventIdRef = useRef<string | null>(null)
-  const currentUser = clientUser ?? user
-  const isNegRiskEnabled = Boolean(event.enable_neg_risk || event.neg_risk)
-  const shouldHideChart = event.total_markets_count > 1 && !isNegRiskEnabled
-  const [showBackToTop, setShowBackToTop] = useState(false)
-  const [backToTopBounds, setBackToTopBounds] = useState<{ left: number, width: number } | null>(null)
-  const selectedMarket = useMemo(() => {
-    if (!currentMarketId) {
-      return null
-    }
-    return event.markets.find(market => market.condition_id === currentMarketId) ?? null
-  }, [currentMarketId, event.markets])
-  const singleMarket = event.markets[0]
-  const isSingleMarketResolved = isMarketResolved(singleMarket)
-  const usesLiveSeriesChart = Boolean(liveChartConfig && shouldUseLiveSeriesChart(event, liveChartConfig))
-
-  useEffect(() => {
-    if (user?.id) {
-      prevUserIdRef.current = user.id
-      useUser.setState(user)
-      return
-    }
-
-    if (!user && prevUserIdRef.current) {
-      prevUserIdRef.current = null
-      useUser.setState(null)
-    }
-  }, [user])
-
-  useEffect(() => {
-    setEvent(event)
-  }, [event, setEvent])
-
-  useEffect(() => {
-    const targetMarket = marketSlug
-      ? event.markets.find(market => market.slug === marketSlug)
-      : resolveDefaultMarket(event.markets)
-    if (!targetMarket) {
-      return
-    }
-
-    const shouldApplyMarket = marketSlug
-      ? appliedMarketSlugRef.current !== marketSlug
-      || appliedEventIdRef.current !== event.id
-      || !currentMarketId
-      : currentEventId !== event.id
-        || !currentMarketId
-
-    if (!shouldApplyMarket) {
-      return
-    }
-
-    setMarket(targetMarket)
-    const defaultOutcome = targetMarket.outcomes[0]
-    if (defaultOutcome) {
-      setOutcome(defaultOutcome)
-    }
-    appliedMarketSlugRef.current = marketSlug ?? null
-    appliedEventIdRef.current = event.id
-  }, [currentEventId, currentMarketId, event, marketSlug, setMarket, setOutcome])
 
   useEffect(() => {
     const paramsKey = searchParams.toString()
@@ -236,6 +163,103 @@ export default function EventContent({
     setType,
   ])
 
+  return null
+}
+
+export default function EventContent({
+  event,
+  user,
+  marketContextEnabled,
+  changeLogEntries: _changeLogEntries,
+  marketSlug,
+  seriesEvents = [],
+  liveChartConfig = null,
+}: EventContentProps) {
+  const t = useExtracted()
+  const setEvent = useOrder(state => state.setEvent)
+  const setMarket = useOrder(state => state.setMarket)
+  const setOutcome = useOrder(state => state.setOutcome)
+  const currentEventId = useOrder(state => state.event?.id)
+  const currentMarketId = useOrder(state => state.market?.condition_id)
+  const isMobile = useIsMobile()
+  const clientUser = useUser()
+  const prevUserIdRef = useRef<string | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
+  const eventMarketsRef = useRef<HTMLDivElement | null>(null)
+  const appliedMarketSlugRef = useRef<string | null>(null)
+  const appliedEventIdRef = useRef<string | null>(null)
+  const currentUser = clientUser ?? user
+  const isNegRiskEnabled = Boolean(event.enable_neg_risk || event.neg_risk)
+  const shouldHideChart = event.total_markets_count > 1 && !isNegRiskEnabled
+  const initialMarket = useMemo(() => {
+    if (marketSlug) {
+      return event.markets.find(market => market.slug === marketSlug) ?? resolveDefaultMarket(event.markets) ?? null
+    }
+    return resolveDefaultMarket(event.markets) ?? null
+  }, [event.markets, marketSlug])
+  const initialOutcome = useMemo(() => {
+    if (!initialMarket) {
+      return null
+    }
+    return initialMarket.outcomes[0] ?? null
+  }, [initialMarket])
+  const [showBackToTop, setShowBackToTop] = useState(false)
+  const [backToTopBounds, setBackToTopBounds] = useState<{ left: number, width: number } | null>(null)
+  const selectedMarket = useMemo(() => {
+    if (!currentMarketId) {
+      return initialMarket
+    }
+    return event.markets.find(market => market.condition_id === currentMarketId) ?? initialMarket
+  }, [currentMarketId, event.markets, initialMarket])
+  const singleMarket = event.markets[0]
+  const isSingleMarketResolved = isMarketResolved(singleMarket)
+  const usesLiveSeriesChart = Boolean(liveChartConfig && shouldUseLiveSeriesChart(event, liveChartConfig))
+
+  useEffect(() => {
+    if (user?.id) {
+      prevUserIdRef.current = user.id
+      useUser.setState(user)
+      return
+    }
+
+    if (!user && prevUserIdRef.current) {
+      prevUserIdRef.current = null
+      useUser.setState(null)
+    }
+  }, [user])
+
+  useEffect(() => {
+    setEvent(event)
+  }, [event, setEvent])
+
+  useEffect(() => {
+    const targetMarket = marketSlug
+      ? event.markets.find(market => market.slug === marketSlug)
+      : resolveDefaultMarket(event.markets)
+    if (!targetMarket) {
+      return
+    }
+
+    const shouldApplyMarket = marketSlug
+      ? appliedMarketSlugRef.current !== marketSlug
+      || appliedEventIdRef.current !== event.id
+      || !currentMarketId
+      : currentEventId !== event.id
+        || !currentMarketId
+
+    if (!shouldApplyMarket) {
+      return
+    }
+
+    setMarket(targetMarket)
+    const defaultOutcome = targetMarket.outcomes[0]
+    if (defaultOutcome) {
+      setOutcome(defaultOutcome)
+    }
+    appliedMarketSlugRef.current = marketSlug ?? null
+    appliedEventIdRef.current = event.id
+  }, [currentEventId, currentMarketId, event, marketSlug, setMarket, setOutcome])
+
   useEffect(() => {
     if (isMobile) {
       setShowBackToTop(false)
@@ -287,76 +311,104 @@ export default function EventContent({
     <EventMarketChannelProvider markets={event.markets}>
       <EventOutcomeChanceProvider eventId={event.id}>
         <OrderLimitPriceSync />
-        <div className={cn(shouldHideChart ? 'grid gap-2' : 'grid gap-3')} ref={contentRef}>
-          <EventHeader event={event} />
+        <Suspense fallback={null}>
+          <EventOrderQuerySync event={event} marketSlug={marketSlug} isMobile={isMobile} />
+        </Suspense>
+        <div className="grid gap-6 pt-5 pb-20 md:pb-0">
+          <div className={cn(shouldHideChart ? 'grid gap-2' : 'grid gap-3')} ref={contentRef}>
+            <EventHeader event={event} />
 
-          <div className={cn(shouldHideChart ? 'w-full' : 'min-h-96 w-full')}>
-            {usesLiveSeriesChart
-              ? (
-                  <EventLiveSeriesChart
-                    event={event}
-                    isMobile={isMobile}
-                    seriesEvents={seriesEvents}
-                    config={liveChartConfig!}
-                  />
-                )
-              : (
-                  <EventChart event={event} isMobile={isMobile} seriesEvents={seriesEvents} />
-                )}
-          </div>
-
-          <div className="grid gap-6">
-            <div
-              ref={eventMarketsRef}
-              id="event-markets"
-              className="min-w-0 overflow-x-hidden lg:overflow-x-visible"
-            >
-              {event.total_markets_count > 1 && <EventMarkets event={event} isMobile={isMobile} />}
+            <div className={cn(shouldHideChart ? 'w-full' : 'min-h-96 w-full')}>
+              {usesLiveSeriesChart
+                ? (
+                    <EventLiveSeriesChart
+                      event={event}
+                      isMobile={isMobile}
+                      seriesEvents={seriesEvents}
+                      config={liveChartConfig!}
+                    />
+                  )
+                : (
+                    <EventChart event={event} isMobile={isMobile} seriesEvents={seriesEvents} />
+                  )}
             </div>
-            {event.total_markets_count === 1 && singleMarket && (
-              <>
-                {currentUser && (
-                  <EventMarketPositions
-                    market={singleMarket}
-                    isNegRiskEnabled={isNegRiskEnabled}
-                    isNegRiskAugmented={Boolean(event.neg_risk_augmented)}
-                    eventOutcomes={event.markets.map(market => ({
-                      conditionId: market.condition_id,
-                      questionId: market.question_id,
-                      label: market.short_title || market.title,
-                      iconUrl: market.icon_url,
-                    }))}
-                    negRiskMarketId={event.neg_risk_market_id}
-                  />
-                )}
-                {!isSingleMarketResolved && (
-                  <EventSingleMarketOrderBook
-                    market={singleMarket}
-                    eventSlug={event.slug}
-                    showCompactVolume={usesLiveSeriesChart}
-                  />
-                )}
-                { currentUser && <EventMarketOpenOrders market={singleMarket} eventSlug={event.slug} />}
-                { currentUser && <EventMarketHistory market={singleMarket} /> }
-              </>
-            )}
-            {marketContextEnabled && <EventMarketContext event={event} />}
-            <EventRules event={event} />
-            {event.total_markets_count === 1 && selectedMarket && shouldDisplayResolutionTimeline(selectedMarket) && (
-              <div className="rounded-xl border bg-background p-4">
-                <ResolutionTimelinePanel market={selectedMarket} settledUrl={null} showLink={false} />
+
+            <div className="grid gap-6">
+              <div
+                ref={eventMarketsRef}
+                id="event-markets"
+                className="min-w-0 overflow-x-hidden lg:overflow-x-visible"
+              >
+                {event.total_markets_count > 1 && <EventMarkets event={event} isMobile={isMobile} />}
+              </div>
+              {event.total_markets_count === 1 && singleMarket && (
+                <>
+                  {currentUser && (
+                    <EventMarketPositions
+                      market={singleMarket}
+                      isNegRiskEnabled={isNegRiskEnabled}
+                      isNegRiskAugmented={Boolean(event.neg_risk_augmented)}
+                      eventOutcomes={event.markets.map(market => ({
+                        conditionId: market.condition_id,
+                        questionId: market.question_id,
+                        label: market.short_title || market.title,
+                        iconUrl: market.icon_url,
+                      }))}
+                      negRiskMarketId={event.neg_risk_market_id}
+                    />
+                  )}
+                  {!isSingleMarketResolved && (
+                    <EventSingleMarketOrderBook
+                      market={singleMarket}
+                      eventSlug={event.slug}
+                      showCompactVolume={usesLiveSeriesChart}
+                    />
+                  )}
+                  { currentUser && <EventMarketOpenOrders market={singleMarket} eventSlug={event.slug} />}
+                  { currentUser && <EventMarketHistory market={singleMarket} /> }
+                </>
+              )}
+              {marketContextEnabled && <EventMarketContext event={event} />}
+              <EventRules event={event} />
+              {event.total_markets_count === 1
+                && selectedMarket
+                && shouldDisplayResolutionTimeline(selectedMarket) && (
+                <div className="rounded-xl border bg-background p-4">
+                  <ResolutionTimelinePanel market={selectedMarket} settledUrl={null} showLink={false} />
+                </div>
+              )}
+            </div>
+
+            {isMobile && (
+              <div className="grid gap-4 lg:hidden">
+                <h3 className="text-base font-medium">{t('Related')}</h3>
+                <EventRelated event={event} />
               </div>
             )}
+            <EventTabs event={event} user={currentUser} />
           </div>
+        </div>
 
-          {isMobile && (
-            <div className="grid gap-4 lg:hidden">
-              <h3 className="text-base font-medium">{t('Related')}</h3>
+        {!isMobile && (
+          <aside
+            className={`
+              hidden gap-4
+              lg:sticky lg:top-38 lg:grid lg:max-h-[calc(100vh-7rem)] lg:self-start lg:overflow-y-auto
+            `}
+          >
+            <div className="grid gap-6">
+              <EventOrderPanelForm
+                event={event}
+                isMobile={false}
+                initialMarket={initialMarket}
+                initialOutcome={initialOutcome}
+              />
+              <EventOrderPanelTermsDisclaimer />
+              <span className="border border-dashed"></span>
               <EventRelated event={event} />
             </div>
-          )}
-          <EventTabs event={event} user={currentUser} />
-        </div>
+          </aside>
+        )}
 
         {!isMobile && showBackToTop && backToTopBounds && (
           <div
@@ -385,17 +437,8 @@ export default function EventContent({
         )}
 
         {isMobile
-          ? <EventOrderPanelMobile event={event} />
-          : (
-              <Teleport to="#event-order-panel">
-                <div className="grid gap-6">
-                  <EventOrderPanelForm event={event} isMobile={false} />
-                  <EventOrderPanelTermsDisclaimer />
-                  <span className="border border-dashed"></span>
-                  <EventRelated event={event} />
-                </div>
-              </Teleport>
-            )}
+          ? <EventOrderPanelMobile event={event} initialMarket={initialMarket} initialOutcome={initialOutcome} />
+          : null}
       </EventOutcomeChanceProvider>
     </EventMarketChannelProvider>
   )

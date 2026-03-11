@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { OddsFormat } from '@/lib/odds-format'
-import type { Event } from '@/types'
+import type { Event, Market, Outcome } from '@/types'
 import { DialogTitle } from '@radix-ui/react-dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { useExtracted } from 'next-intl'
@@ -17,6 +17,8 @@ import { useIsSingleMarket, useOrder, useOutcomeTopOfBookPrice } from '@/stores/
 
 interface EventMobileOrderPanelProps {
   event: Event
+  initialMarket?: Market | null
+  initialOutcome?: Outcome | null
   showDefaultTrigger?: boolean
   mobileMarketInfo?: ReactNode
   primaryOutcomeIndex?: number | null
@@ -27,6 +29,8 @@ interface EventMobileOrderPanelProps {
 
 export default function EventOrderPanelMobile({
   event,
+  initialMarket = null,
+  initialOutcome = null,
   showDefaultTrigger = true,
   mobileMarketInfo,
   primaryOutcomeIndex = null,
@@ -37,9 +41,54 @@ export default function EventOrderPanelMobile({
   const t = useExtracted()
   const normalizeOutcomeLabel = useOutcomeLabel()
   const state = useOrder()
-  const isSingleMarket = useIsSingleMarket()
-  const yesPrice = useOutcomeTopOfBookPrice(OUTCOME_INDEX.YES, ORDER_SIDE.BUY)
-  const noPrice = useOutcomeTopOfBookPrice(OUTCOME_INDEX.NO, ORDER_SIDE.BUY)
+  const hasMatchingStoreEvent = state.event?.id === event.id
+  const hasMatchingStoreMarket = Boolean(
+    state.market
+    && event.markets.some(market => market.condition_id === state.market?.condition_id),
+  )
+  const activeEvent: Event = hasMatchingStoreEvent && state.event ? state.event : event
+  const activeMarket = hasMatchingStoreMarket ? state.market : initialMarket
+  const fallbackOutcome = initialOutcome ?? activeMarket?.outcomes[0] ?? null
+  const hasMatchingStoreOutcome = Boolean(
+    state.outcome
+    && activeMarket
+    && state.outcome.condition_id === activeMarket.condition_id,
+  )
+  const activeOutcome = hasMatchingStoreOutcome ? state.outcome : fallbackOutcome
+  const isSingleMarket = useIsSingleMarket() || activeEvent.total_markets_count === 1
+  const liveYesPrice = useOutcomeTopOfBookPrice(OUTCOME_INDEX.YES, ORDER_SIDE.BUY)
+  const liveNoPrice = useOutcomeTopOfBookPrice(OUTCOME_INDEX.NO, ORDER_SIDE.BUY)
+  const activeLiveYesPrice = hasMatchingStoreMarket ? liveYesPrice : null
+  const activeLiveNoPrice = hasMatchingStoreMarket ? liveNoPrice : null
+  const yesOutcome = activeMarket?.outcomes.find(outcome => outcome.outcome_index === OUTCOME_INDEX.YES)
+    ?? activeMarket?.outcomes[OUTCOME_INDEX.YES]
+  const noOutcome = activeMarket?.outcomes.find(outcome => outcome.outcome_index === OUTCOME_INDEX.NO)
+    ?? activeMarket?.outcomes[OUTCOME_INDEX.NO]
+  const marketPrice = typeof activeMarket?.price === 'number' && Number.isFinite(activeMarket.price)
+    ? activeMarket.price
+    : typeof activeMarket?.probability === 'number' && Number.isFinite(activeMarket.probability)
+      ? activeMarket.probability / 100
+      : null
+  const yesPrice = activeLiveYesPrice ?? (
+    typeof yesOutcome?.buy_price === 'number'
+      ? yesOutcome.buy_price
+      : marketPrice
+  )
+  const noPrice = activeLiveNoPrice ?? (
+    typeof noOutcome?.buy_price === 'number'
+      ? noOutcome.buy_price
+      : typeof marketPrice === 'number'
+        ? Math.max(0, Math.min(1, 1 - marketPrice))
+        : null
+  )
+  const buyYesOutcome = yesOutcome ?? activeMarket?.outcomes[0] ?? null
+  const buyNoOutcome = noOutcome ?? activeMarket?.outcomes[1] ?? null
+  const buyYesOutcomeLabel = buyYesOutcome?.outcome_text
+    ? (normalizeOutcomeLabel(buyYesOutcome.outcome_text) ?? buyYesOutcome.outcome_text)
+    : t('Yes')
+  const buyNoOutcomeLabel = buyNoOutcome?.outcome_text
+    ? (normalizeOutcomeLabel(buyNoOutcome.outcome_text) ?? buyNoOutcome.outcome_text)
+    : t('No')
   const shouldShowDefaultTrigger = showDefaultTrigger && isSingleMarket
   const yesPriceLabel = oddsFormat === 'price'
     ? formatCentsLabel(yesPrice)
@@ -62,18 +111,19 @@ export default function EventOrderPanelMobile({
                 variant="yes"
                 size="outcomeLg"
                 onClick={() => {
-                  if (!state.market) {
+                  if (!activeMarket || !buyYesOutcome) {
                     return
                   }
 
-                  state.setOutcome(state.market.outcomes[0])
+                  state.setMarket(activeMarket)
+                  state.setOutcome(buyYesOutcome)
                   state.setIsMobileOrderPanelOpen(true)
                 }}
               >
                 <span className="truncate opacity-70">
                   {t('Buy')}
                   {' '}
-                  {normalizeOutcomeLabel(state.market!.outcomes[0].outcome_text) ?? state.market!.outcomes[0].outcome_text}
+                  {buyYesOutcomeLabel}
                 </span>
                 <span className="shrink-0 font-bold">
                   {yesPriceLabel}
@@ -83,18 +133,19 @@ export default function EventOrderPanelMobile({
                 variant="no"
                 size="outcomeLg"
                 onClick={() => {
-                  if (!state.market) {
+                  if (!activeMarket || !buyNoOutcome) {
                     return
                   }
 
-                  state.setOutcome(state.market.outcomes[1])
+                  state.setMarket(activeMarket)
+                  state.setOutcome(buyNoOutcome)
                   state.setIsMobileOrderPanelOpen(true)
                 }}
               >
                 <span className="truncate opacity-70">
                   {t('Buy')}
                   {' '}
-                  {normalizeOutcomeLabel(state.market!.outcomes[1].outcome_text) ?? state.market!.outcomes[1].outcome_text}
+                  {buyNoOutcomeLabel}
                 </span>
                 <span className="shrink-0 font-bold">
                   {noPriceLabel}
@@ -113,6 +164,8 @@ export default function EventOrderPanelMobile({
         <EventOrderPanelForm
           event={event}
           isMobile={true}
+          initialMarket={activeMarket}
+          initialOutcome={activeOutcome}
           mobileMarketInfo={mobileMarketInfo}
           primaryOutcomeIndex={primaryOutcomeIndex}
           oddsFormat={oddsFormat}
